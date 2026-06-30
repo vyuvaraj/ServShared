@@ -18,6 +18,8 @@ type ContextKey string
 const (
 	// ClaimsContextKey is the context key for authenticated claims.
 	ClaimsContextKey ContextKey = "servverse-claims"
+	// TenantContextKey is the context key for the verified tenant ID.
+	TenantContextKey ContextKey = "servverse-tenant-id"
 )
 
 // GetClaims extracts claims from request context (set by AuthMiddleware).
@@ -26,6 +28,15 @@ func GetClaims(r *http.Request) *Claims {
 		return c
 	}
 	return nil
+}
+
+// GetTenantID extracts the verified tenant ID from request context (set by TenantMiddleware).
+// Always use this instead of reading X-Tenant-ID directly to ensure it has been verified.
+func GetTenantID(r *http.Request) string {
+	if tid, ok := r.Context().Value(TenantContextKey).(string); ok {
+		return tid
+	}
+	return ""
 }
 
 // AuthMiddleware returns an HTTP middleware that enforces JWT auth.
@@ -70,6 +81,44 @@ func AuthMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// TenantMiddleware enforces that the X-Tenant-ID request header matches the
+// tenant_id claim embedded in the verified JWT. This prevents callers from
+// impersonating tenants by forging the header.
+//
+// Behavior:
+//   - If no JWT is present in context (auth disabled / dev mode): falls back to
+//     X-Tenant-ID header value, defaulting to "default" if absent.
+//   - If JWT is present and has a tenant_id claim: X-Tenant-ID MUST match.
+//   - If JWT has no tenant_id claim (e.g. service tokens): X-Tenant-ID is
+//     accepted as-is (service tokens are implicitly trusted for any tenant).
+//   - The verified tenant ID is injected into context via TenantContextKey.
+func TenantMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headerTenant := r.Header.Get("X-Tenant-ID")
+		if headerTenant == "" {
+			headerTenant = "default"
+		}
+
+		claims := GetClaims(r)
+		verifiedTenant := headerTenant
+
+		if claims != nil && claims.TenantID != "" {
+			// Enforce: header must match JWT claim exactly.
+			if headerTenant != claims.TenantID {
+				writeAuthError(w, http.StatusForbidden,
+					"Forbidden: X-Tenant-ID does not match authenticated tenant",
+					"ERR_TENANT_MISMATCH")
+				return
+			}
+			verifiedTenant = claims.TenantID
+		}
+
+		// Inject verified tenant ID into context.
+		ctx := context.WithValue(r.Context(), TenantContextKey, verifiedTenant)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 // GenerateServiceToken creates a long-lived JWT for inter-service communication.
 // The token identifies the calling service and has the "service" role.
 func GenerateServiceToken(secret string, serviceName string) (string, error) {
@@ -93,11 +142,12 @@ func GenerateServiceToken(secret string, serviceName string) (string, error) {
 	return token.SignedString([]byte(secret))
 }
 
-// GenerateUserToken creates a JWT for a user with given roles.
-func GenerateUserToken(secret string, username string, roles []string, ttl time.Duration) (string, error) {
+// GenerateUserToken creates a JWT for a user with given roles and tenant.
+func GenerateUserToken(secret string, username string, roles []string, tenantID string, ttl time.Duration) (string, error) {
 	claims := Claims{
 		Username: username,
 		Roles:    roles,
+		TenantID: tenantID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    "servverse",
 			Subject:   username,
