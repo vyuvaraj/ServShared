@@ -340,5 +340,18 @@ func VersionHandler(serviceName, version string) http.HandlerFunc {
 	}
 }
 
+// DeprecationMiddleware adds Deprecation and Sunset headers to response.
+func DeprecationMiddleware(sunsetDate string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Deprecation", "true")
+			if sunsetDate != "" {
+				w.Header().Set("Sunset", sunsetDate)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 
 
