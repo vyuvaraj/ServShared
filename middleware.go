@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -258,7 +259,7 @@ func LogJSON(r *http.Request, level, msg string) {
 	entry := map[string]interface{}{
 		"level": level,
 		"ts":    time.Now().Format(time.RFC3339),
-		"msg":   msg,
+		"msg":   SanitizeLog(msg),
 	}
 	if r != nil {
 		entry["method"] = r.Method
@@ -303,4 +304,41 @@ func MaxBytesMiddleware(limit int64) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+var sanitizeRegex = regexp.MustCompile(`(?i)(password|secret|token|key|authorization|bearer|passwd)\s*[:=]\s*([^\s,"']+)`)
+
+// SanitizeLog redacts sensitive information from log messages.
+func SanitizeLog(msg string) string {
+	return sanitizeRegex.ReplaceAllString(msg, "$1:[REDACTED]")
+}
+
+// IsolateTopic prefixes a topic name with the tenant ID from context.
+func IsolateTopic(ctx context.Context, topic string) string {
+	if tid, ok := ctx.Value(TenantContextKey).(string); ok && tid != "" && tid != "default" {
+		return tid + "-" + topic
+	}
+	return topic
+}
+
+// IsolateDBPool prefixes database name with the tenant ID from context.
+func IsolateDBPool(ctx context.Context, dbName string) string {
+	if tid, ok := ctx.Value(TenantContextKey).(string); ok && tid != "" && tid != "default" {
+		return tid + "_" + dbName
+	}
+	return dbName
+}
+
+// VersionHandler returns a JSON version response.
+func VersionHandler(serviceName, version string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{
+			"service": serviceName,
+			"version": version,
+		})
+	}
+}
+
+
 
