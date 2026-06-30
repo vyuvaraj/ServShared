@@ -101,3 +101,22 @@ func TestGetTenantID_Default(t *testing.T) {
 		t.Errorf("expected empty tenant ID without middleware, got '%s'", tid)
 	}
 }
+
+func BenchmarkTokenGenerationAndVerification(b *testing.B) {
+	secret := "my-perf-test-secret-key-32-chars-long"
+	token, err := ServShared.GenerateUserToken(secret, "alice", []string{"user"}, "tenant-a", time.Hour)
+	if err != nil {
+		b.Fatalf("failed to generate token: %v", err)
+	}
+
+	validator := ServShared.NewAuthValidator(secret, "", "")
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		claims, err := validator.ValidateToken(token)
+		if err != nil {
+			b.Fatalf("failed to validate token: %v", err)
+		}
+		_ = claims
+	}
+}
