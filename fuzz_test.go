@@ -37,3 +37,22 @@ func FuzzSanitizeLog(f *testing.F) {
 		SanitizeLog(data)
 	})
 }
+
+func TestSanitizeLogQuoted(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"password=secret123", "password=[REDACTED]"},
+		{`"password": "my-secret-123"`, `"password": "[REDACTED]"`},
+		{`'token'='my-token'`, `'token'='[REDACTED]'`},
+		{"normal log message", "normal log message"},
+	}
+
+	for _, tc := range tests {
+		got := SanitizeLog(tc.input)
+		if got != tc.expected {
+			t.Errorf("SanitizeLog(%q) = %q; expected %q", tc.input, got, tc.expected)
+		}
+	}
+}
