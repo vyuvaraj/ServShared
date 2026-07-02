@@ -56,3 +56,16 @@ func TestSanitizeLogQuoted(t *testing.T) {
 		}
 	}
 }
+
+func FuzzValidateToken(f *testing.F) {
+	f.Add("invalid-token-string")
+	f.Add("header.payload.signature")
+	f.Add("")
+
+	validator := NewAuthValidator("my-secret-key-12345", "", "")
+
+	f.Fuzz(func(t *testing.T, tokenStr string) {
+		_, _ = validator.ValidateToken(tokenStr)
+	})
+}
+
