@@ -355,6 +355,7 @@ func VersionHandler(serviceName, version string) http.HandlerFunc {
 		json.NewEncoder(w).Encode(map[string]string{
 			"service": serviceName,
 			"version": version,
+			"edition": Edition,
 		})
 	}
 }
