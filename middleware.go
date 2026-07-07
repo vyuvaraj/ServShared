@@ -172,18 +172,31 @@ func SanitizeLog(msg string) string {
 	})
 }
 
+var (
+	// IsolateTopicHook is dynamically injected by the Enterprise Edition module.
+	IsolateTopicHook func(ctx context.Context, topic string) string
+	// IsolateDBPoolHook is dynamically injected by the Enterprise Edition module.
+	IsolateDBPoolHook func(ctx context.Context, dbName string) string
+)
+
 // IsolateTopic prefixes a topic name with the tenant ID from context.
 // In OSS: returns the topic unchanged (single-tenant mode).
 // In EE: prefixes with tenant ID for multi-tenant isolation.
 func IsolateTopic(ctx context.Context, topic string) string {
-	return isolateTopicImpl(ctx, topic)
+	if IsolateTopicHook != nil {
+		return IsolateTopicHook(ctx, topic)
+	}
+	return topic
 }
 
 // IsolateDBPool prefixes database name with the tenant ID from context.
 // In OSS: returns the dbName unchanged (single-tenant mode).
 // In EE: prefixes with tenant ID for multi-tenant isolation.
 func IsolateDBPool(ctx context.Context, dbName string) string {
-	return isolateDBPoolImpl(ctx, dbName)
+	if IsolateDBPoolHook != nil {
+		return IsolateDBPoolHook(ctx, dbName)
+	}
+	return dbName
 }
 
 // VersionHandler returns a JSON version response.
